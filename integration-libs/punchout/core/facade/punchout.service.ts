@@ -119,9 +119,9 @@ export class PunchoutService implements PunchoutFacade {
    */
 
   protected getPunchoutRequisitionCommand: Command<
-    undefined,
+    boolean,
     PunchoutRequisition
-  > = this.commandService.create(() => {
+  > = this.commandService.create((isInitialRequisition: boolean) => {
     return this.punchoutAuthService.isUserLoggedIn().pipe(
       switchMap((isLoggedIn) => {
         return isLoggedIn
@@ -132,6 +132,7 @@ export class PunchoutService implements PunchoutFacade {
       switchMap((punchoutState: PunchoutState) => {
         // prevent manual navigation to requisition page
         if (
+          !isInitialRequisition &&
           punchoutState?.closePunchoutSession === undefined &&
           punchoutState?.cancelRequisition === undefined
         ) {
@@ -268,8 +269,10 @@ export class PunchoutService implements PunchoutFacade {
     return this.getPunchoutSessionCommand.execute(punchoutSessionInput);
   }
 
-  getPunchoutSessionRequisition(): Observable<PunchoutRequisition | undefined> {
-    return this.getPunchoutRequisitionCommand.execute(undefined);
+  getPunchoutSessionRequisition(
+    isInitialRequisition = false
+  ): Observable<PunchoutRequisition | undefined> {
+    return this.getPunchoutRequisitionCommand.execute(isInitialRequisition);
   }
 
   logoutPunchoutUser(): Observable<boolean> {
@@ -331,7 +334,7 @@ export class PunchoutService implements PunchoutFacade {
   }
 
   protected setPunchoutInitialRequisition(): void {
-    this.getPunchoutSessionRequisition()
+    this.getPunchoutSessionRequisition(true)
       .pipe(take(1))
       .subscribe({
         next: (punchoutRequisition) => {
