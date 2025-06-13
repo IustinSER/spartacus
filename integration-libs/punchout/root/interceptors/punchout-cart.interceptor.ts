@@ -36,6 +36,9 @@ export class PunchoutCartInterceptor implements HttpInterceptor {
           punchoutState?.punchoutSession?.cartId &&
           request.url.includes(`/carts/${punchoutState.punchoutSession.cartId}`)
         ) {
+          console.log(
+            `Adding punchout session id to request header: ${punchoutState.punchoutSessionId}`
+          );
           request = request.clone({
             headers: request.headers.append(
               this.PUNCHOUT_SESSION_ID_HEADER_KEY,

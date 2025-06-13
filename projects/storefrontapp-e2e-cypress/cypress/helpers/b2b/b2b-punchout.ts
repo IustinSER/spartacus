@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createCart } from '../../support/utils/cart';
+import { addProductToB2BCart, createCart } from '../../support/utils/cart';
 import { login, setSessionData } from '../../support/utils/login';
 
 export const mockPunchoutSession = {
@@ -35,21 +35,54 @@ export function createPunchoutSessionIntercept(
   ).as(alias);
 }
 
-export function openPunchoutSession(punchoutSession): any {
+const mockPunchoutRequisition = {
+  browseFormPostUrl: '/ariba-redirection-test',
+  orderAsCXML:
+    'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48IURPQ1RZUEUgY1hNTCBTWVNURU0gImh0dHA6Ly94bWwuY1hNTC5vcmcvc2NoZW1hcy9jWE1MLzEuMi4wNTEvY1hNTC5kdGQiPjxjWE1MIHBheWxvYWRJRD0iYzNlMWMzMTYtODFlYi00YTg2LWJiMGQtMDEyMjRhNmI4NzlmIiB0aW1lc3RhbXA9IjIwMjUtMDYtMTNUMDk6MTg6MjAtMDQ6MDAiIHhtbDpsYW5nPSJlbi1VUyI+PEhlYWRlcj48RnJvbT48Q3JlZGVudGlhbCBkb21haW49Ik5ldHdvcmtJRCI+PElkZW50aXR5PkFOMDE2NjU2MzIwNTQtVDwvSWRlbnRpdHk+PC9DcmVkZW50aWFsPjwvRnJvbT48VG8+PENyZWRlbnRpYWwgZG9tYWluPSJBcmliYU5ldHdvcmtVc2VySWQiPjxJZGVudGl0eT5zeXNhZG1pbkBhcmliYS5jb208L0lkZW50aXR5PjwvQ3JlZGVudGlhbD48L1RvPjxTZW5kZXI+PENyZWRlbnRpYWwgZG9tYWluPSJBcmliYU5ldHdvcmtVc2VySWQiPjxJZGVudGl0eT5zeXNhZG1pbkBhcmliYS5jb208L0lkZW50aXR5PjwvQ3JlZGVudGlhbD48L1NlbmRlcj48L0hlYWRlcj48TWVzc2FnZT48UHVuY2hPdXRPcmRlck1lc3NhZ2U+PEJ1eWVyQ29va2llPklZcVU3WnNacUdzWWp0Wk44UTdDRklWUFRwMFNFYm1UMC4zNzY2MzkzNzQ1NDcxODcxMzI8L0J1eWVyQ29va2llPjxQdW5jaE91dE9yZGVyTWVzc2FnZUhlYWRlciBvcGVyYXRpb25BbGxvd2VkPSJlZGl0Ij48VG90YWw+PE1vbmV5IGN1cnJlbmN5PSJVU0QiPjAuMDwvTW9uZXk+PC9Ub3RhbD48L1B1bmNoT3V0T3JkZXJNZXNzYWdlSGVhZGVyPjwvUHVuY2hPdXRPcmRlck1lc3NhZ2U+PC9NZXNzYWdlPjwvY1hNTD4=',
+};
+
+export function createPunchoutRequisitionIntercept(
+  mockResponse = mockPunchoutRequisition,
+  alias = 'punchoutRequisition'
+) {
+  cy.intercept(
+    {
+      method: 'GET',
+      pathname: `${Cypress.env('OCC_PREFIX')}/${Cypress.env('BASE_SITE')}/punchout/sessions/*/requisition`,
+    },
+    mockResponse
+  ).as(alias);
+}
+
+export function openPunchoutSession(punchoutSession, addItem?: boolean): any {
   return login(punchoutSession.customerId, punchoutSession.password)
     .then((result) => {
       expect(result.status).to.eq(200);
       cy.log('Logged in as Punchout user', JSON.stringify(result.body));
       setSessionData(result.body);
       punchoutSession.token.accessToken = result.body.access_token;
-      createCart(result.body.access_token);
+      return createCart(result.body.access_token);
     })
     .then((cart) => {
       cy.log('Cart created', JSON.stringify(cart));
       punchoutSession.cartId = (cart as any).body.code;
       mockPunchoutSession.cartId = punchoutSession.cartId;
-      createPunchoutSessionIntercept(punchoutSession);
-      return login('carla.torres@rustic-hw.com', 'pw4all');
+      if (addItem) {
+        return addProductToB2BCart(
+          punchoutSession.cartId,
+          '3881014',
+          '1',
+          punchoutSession.token.accessToken
+        ).then((response) => {
+          expect(response.status).to.eq(200);
+          cy.log('Product added to cart', JSON.stringify(response.body));
+          createPunchoutSessionIntercept(punchoutSession);
+          return login('carla.torres@rustic-hw.com', 'pw4all');
+        });
+      } else {
+        createPunchoutSessionIntercept(punchoutSession);
+        return login('carla.torres@rustic-hw.com', 'pw4all');
+      }
     })
     .then((result) => {
       expect(result.status).to.eq(200);
@@ -105,12 +138,19 @@ export function addProductAndClickCheckout(productId) {
   });
 }
 
-export function verifyBackToAriba() {
+export function verifyBackToAriba(discardCartEntries?: boolean) {
   cy.get('cx-global-message').should('contain', 'Return to Procurement System');
   cy.location('pathname').should(
     'contain',
-    `/${Cypress.env('BASE_SITE')}/en/USD/punchout/cxml/error`
+    `/${Cypress.env('BASE_SITE')}/en/USD/punchout/cxml/requisition`
   );
+  // cy.get('body > pre').should('contain', 'Cannot POST /ariba-redirection-test');
+  // cy.wait('@punchoutRequisition')
+  //   .its('request.headers')
+  //   .should(
+  //     discardCartEntries ? 'have.property' : 'not.have.property',
+  //     'discardCartEntries'
+  //   );
 }
 
 export function deleteStaleCart(punchoutSession) {
